@@ -1,0 +1,75 @@
+name: cicd
+
+on:
+  push:
+    paths:
+      - src/**
+    branches:
+      - main
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        
+      - name: Shorten commit id
+        shell: bash
+        run: |
+          echo "COMMIT_ID=${GITHUB_SHA::6}" >> "$GITHUB_ENV"
+      -
+        name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      -
+        name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          tags: sshamoun/python-app:${{ env.COMMIT_ID }}
+          platforms: linux/amd64,linux/arm64
+          
+    outputs:
+      commit_image_id: ${{ env.COMMIT_ID }}      
+  cd:
+    needs: ci
+    runs-on: self-hosted
+    steps:
+      - name: Clone repo code
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+
+      - name: Modify values file of python-app
+        shell: bash
+        run: |
+          echo ${{needs.ci.outputs.commit_image_id}}
+          pip install yq
+          yq -Yi '.image.tag = "${{needs.ci.outputs.commit_image_id}}"' charts/python-app/values.yaml
+
+      - name: Commit changes
+        uses: EndBug/add-and-commit@v9
+        with:
+          message: 'Update image tag in values.yaml to ${{needs.ci.outputs.commit_image_id}}'
+          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+
+      - name: Install ArgoCD CLI
+        run: |
+          ARGOCD_VERSION=$(curl --silent "https://api.github.com/repos/argoproj/argo-cd/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+          curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/download/v${ARGOCD_VERSION}/argocd-linux-amd64
+          chmod +x argocd
+          sudo mv argocd /usr/local/bin/argocd
+
+      - name: Argocd app sync
+        shell: bash
+        run: |
+          argocd login argocd-server.argocd \
+            --insecure \
+            --grpc-web \
+            --username admin \
+            --password ${{ secrets.ARGOCD_PASS }}
+          argocd app sync python-app         

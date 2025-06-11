@@ -1,10 +1,10 @@
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
-  name: ${{values.app_name}}
-  description: Python app that displays time - named ${{values.app_name}}
+  name: python-app
+  description: app displays time.
   annotations:
-     github.com/project-slug: Shamoun-dev/${{values.app_name}}
+     github.com/project-slug: Shamoun-dev/python-app
      backstage.io/techdocs-ref: dir:.
 spec:
   type: service
